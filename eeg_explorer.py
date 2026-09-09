@@ -157,8 +157,7 @@ def compute_features(segment):
 # ════════════════════════════════════════════════════════════════════════════
 # SIDEBAR — chọn bệnh nhân & file
 # ════════════════════════════════════════════════════════════════════════════
-st.sidebar.title("🧠 EEG Explorer")
-st.sidebar.markdown("Khám phá bộ dữ liệu **CHB-MIT**")
+st.sidebar.title("EEG Explorer")
 
 # Danh sách bệnh nhân
 if DATA_ROOT and os.path.exists(DATA_ROOT):
@@ -206,11 +205,10 @@ n_ch, n_samples = data.shape
 # ════════════════════════════════════════════════════════════════════════════
 # TABS
 # ════════════════════════════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📋 Bước 1 — Thuộc tính file",
-    "📈 Bước 2 — Xem sóng EEG",
-    "🔬 Bước 3 — So sánh giai đoạn",
-    "🌳 Bước 4 — Đặc trưng & Decision Tree",
+tab1, tab2, tab3 = st.tabs([
+    "Thuộc tính file",
+    "Xem sóng EEG",
+    "So sánh giai đoạn",
 ])
 
 
@@ -218,7 +216,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # TAB 1: Thuộc tính file
 # ────────────────────────────────────────────────────────────────────────────
 with tab1:
-    st.header("📋 Bước 1 — Thuộc tính của file EDF")
+    st.header("Thuộc tính file")
 
     st.info("""
     **Bước này làm gì?**
@@ -266,7 +264,7 @@ with tab1:
 # TAB 2: Xem sóng EEG
 # ────────────────────────────────────────────────────────────────────────────
 with tab2:
-    st.header("📈 Bước 2 — Xem sóng EEG")
+    st.header("Xem sóng EEG")
 
     st.info("""
     **Bước này làm gì?**
@@ -332,7 +330,7 @@ with tab2:
 # TAB 3: So sánh giai đoạn
 # ────────────────────────────────────────────────────────────────────────────
 with tab3:
-    st.header("🔬 Bước 3 — So sánh sóng trước / trong / sau cơn")
+    st.header("So sánh giai đoạn")
 
     st.info("""
     **Bước này làm gì?**
