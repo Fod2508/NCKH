@@ -378,26 +378,71 @@ with tab3:
 
         # Phổ tần số so sánh
         st.subheader("Phổ tần số (FFT) — 3 giai đoạn")
-        st.caption("Trục X = tần số (Hz), trục Y = năng lượng. Vùng đỏ = trong cơn thường có năng lượng phân bố khác hẳn.")
+        st.caption("Trục X = tần số (Hz), trục Y = năng lượng. Chú ý trục Y chung — trong cơn năng lượng cao hơn hẳn.")
 
-        fig2, axes2 = plt.subplots(1, 3, figsize=(14, 4), sharey=False)
-        for ax, (sig, title, color) in zip(axes2, [
+        # Tính trước để dùng chung trục Y
+        fft_data = []
+        for sig, title, color in [
             (seg_pre,   "Trước cơn",  "steelblue"),
             (seg_ictal, "Trong cơn",  "red"),
             (seg_post,  "Sau cơn",    "green"),
-        ]):
+        ]:
             freqs_f = np.fft.rfftfreq(len(sig), d=1/sfreq)
             fft_mag = np.abs(np.fft.rfft(sig))
             mask    = freqs_f <= 50
-            ax.fill_between(freqs_f[mask], fft_mag[mask], alpha=0.4, color=color)
-            ax.plot(freqs_f[mask], fft_mag[mask], lw=0.8, color=color)
+            fft_data.append((freqs_f[mask], fft_mag[mask], title, color))
+
+        y_max = max(d[1].max() for d in fft_data) * 1.05
+
+        col_scale = st.columns([1, 3])
+        use_log = col_scale[0].checkbox("Log scale", value=False,
+                                         help="Log scale giúp thấy rõ vùng tần số cao hơn")
+
+        fig2, axes2 = plt.subplots(1, 3, figsize=(14, 4), sharey=True)
+        fig2.suptitle("Phổ tần số — trục Y chung (dễ so sánh hơn)", fontsize=11)
+        for ax, (freqs_f, fft_mag, title, color) in zip(axes2, fft_data):
+            ax.fill_between(freqs_f, fft_mag, alpha=0.4, color=color)
+            ax.plot(freqs_f, fft_mag, lw=0.8, color=color)
             ax.set_title(title, fontsize=10)
             ax.set_xlabel("Tần số (Hz)")
             ax.set_ylabel("Biên độ FFT")
+            if use_log:
+                ax.set_yscale("log")
+            else:
+                ax.set_ylim(0, y_max)
             for f in [4, 8, 13, 30]:
                 ax.axvline(f, color="gray", ls="--", lw=0.6)
+            # Label các dải
+            for f, lbl in [(2,"δ"), (6,"θ"), (10,"α"), (20,"β"), (35,"γ")]:
+                ax.text(f, y_max*0.95 if not use_log else fft_mag.max()*2,
+                        lbl, ha="center", fontsize=8, color="gray")
 
         plt.tight_layout()
         st.pyplot(fig2)
         plt.close()
+
+        # Bảng % năng lượng để so sánh rõ hơn
+        st.subheader("% năng lượng theo dải tần số")
+        import pandas as pd
+
+        def pct_bands(sig):
+            freqs_b = np.fft.rfftfreq(len(sig), d=1/sfreq)
+            fft_b   = np.abs(np.fft.rfft(sig)) ** 2
+            def bp(lo, hi):
+                return float(np.sum(fft_b[(freqs_b>=lo)&(freqs_b<hi)]))
+            d=bp(0.5,4); th=bp(4,8); al=bp(8,13); be=bp(13,30); ga=bp(30,40)
+            tot = d+th+al+be+ga
+            return [round(d/tot*100,1), round(th/tot*100,1),
+                    round(al/tot*100,1), round(be/tot*100,1), round(ga/tot*100,1)]
+
+        df_pct = pd.DataFrame(
+            [pct_bands(seg_pre), pct_bands(seg_ictal), pct_bands(seg_post)],
+            index=["Trước cơn", "Trong cơn", "Sau cơn"],
+            columns=["Delta 0.5-4Hz", "Theta 4-8Hz", "Alpha 8-13Hz",
+                     "Beta 13-30Hz", "Gamma 30-40Hz"]
+        )
+        st.dataframe(df_pct.style.highlight_max(axis=0, color="#ffcccc")
+                                  .highlight_min(axis=0, color="#ccffcc"),
+                     use_container_width=True)
+        st.caption("🔴 Đỏ = cao nhất  |  🟢 Xanh = thấp nhất  |  So sánh từng cột để thấy sự dịch chuyển năng lượng")
 
