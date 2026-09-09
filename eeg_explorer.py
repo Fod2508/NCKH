@@ -58,7 +58,7 @@ def load_edf(subject, filename):
     """
     Load EDF theo thứ tự ưu tiên:
     1. Local  (máy đã tải về)
-    2. Google Drive  (Streamlit Cloud)
+    2. Google Drive — tải về /tmp rồi đọc
     3. PhysioNet  (fallback)
     """
     import tempfile
@@ -69,39 +69,45 @@ def load_edf(subject, filename):
 
     # -- GOOGLE DRIVE --
     elif DATA_MODE == "gdrive":
-        import gdown, json
+        import gdown
 
-        index = _get_gdrive_index()
-        file_id = index.get(subject, {}).get(filename)
+        index    = _get_gdrive_index()
+        file_id  = index.get(subject, {}).get(filename)
 
         if not file_id:
             st.error(f"Khong tim thay {subject}/{filename} trong gdrive_index.json")
             st.stop()
 
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".edf")
-        tmp.close()
-        st.toast(f"Dang tai {filename} tu Drive (~40MB)...", icon="⏳")
-        gdown.download(id=file_id, output=tmp.name, quiet=True, fuzzy=True)
-        filepath = tmp.name
+        tmp_path = f"/tmp/{subject}_{filename}"
+        # Dùng cache file trên /tmp nếu đã tải rồi
+        if not os.path.exists(tmp_path):
+            gdown.download(id=file_id, output=tmp_path, quiet=True, fuzzy=True)
+        filepath = tmp_path
 
     # -- PHYSIONET fallback --
     else:
         import requests as req
         url = f"{PHYSIONET_URL}/{subject}/{filename}"
-        with st.spinner(f"Tải từ PhysioNet: {filename}..."):
-            r = req.get(url, timeout=120)
-            r.raise_for_status()
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".edf")
-        tmp.write(r.content)
-        tmp.flush()
-        filepath = tmp.name
+        tmp_path = f"/tmp/{subject}_{filename}"
+        if not os.path.exists(tmp_path):
+            with st.spinner(f"Tải từ PhysioNet: {filename}..."):
+                r = req.get(url, timeout=120)
+                r.raise_for_status()
+            with open(tmp_path, "wb") as f:
+                f.write(r.content)
+        filepath = tmp_path
 
-    raw  = mne.io.read_raw_edf(filepath, preload=True, verbose=False)
-    # Chi load 1 kenh de tiet kiem RAM tren Streamlit Cloud
+    raw  = mne.io.read_raw_edf(filepath, preload=False, verbose=False)
+    ch_names = raw.ch_names
+    sfreq    = int(raw.info["sfreq"])
+    duration = raw.times[-1]
+    # Load tối đa 20 phút đầu để tiết kiệm RAM trên cloud
+    max_s    = min(duration, 1200) if DATA_MODE != "local" else duration
+    raw.crop(tmax=max_s).load_data(verbose=False)
     if DATA_MODE != "local":
-        raw.pick(raw.ch_names[:8])   # chi lay 8 kenh dau
+        raw.pick(raw.ch_names[:8])
     data = raw.get_data() * 1e6
-    return data, raw.ch_names, int(raw.info["sfreq"]), raw.times[-1]
+    return data, ch_names, sfreq, duration
 
 
 @st.cache_data(ttl=3600, show_spinner="Đang lấy danh sách file từ Drive...")
@@ -116,7 +122,6 @@ def _get_gdrive_index():
         with open(index_path) as f:
             return json.load(f)
     return {}
-
 
 def band_power(signal_1ch, sfreq, lo, hi):
     freqs = np.fft.rfftfreq(len(signal_1ch), d=1/sfreq)
