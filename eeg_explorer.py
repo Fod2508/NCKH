@@ -283,9 +283,9 @@ with tab1:
     st.subheader("Thống kê toàn file")
     import pandas as pd
     stats_data = []
-    for i, ch in enumerate(ch_names):
+    for i in range(n_ch):
         stats_data.append({
-            "Kênh": ch,
+            "Kênh": ch_names[i],
             "Min (µV)": round(float(data[i].min()), 1),
             "Max (µV)": round(float(data[i].max()), 1),
             "Mean (µV)": round(float(data[i].mean()), 3),
@@ -308,10 +308,12 @@ with tab2:
 
     col_a, col_b, col_c = st.columns([2, 2, 1])
     with col_a:
+        # Chỉ hiện kênh có trong data thực tế
+        available_ch = ch_names[:n_ch]
         selected_ch = st.multiselect(
             "Chọn kênh xem",
-            ch_names,
-            default=ch_names[:3],
+            available_ch,
+            default=available_ch[:3],
             max_selections=6,
         )
     with col_b:
@@ -377,7 +379,7 @@ with tab3:
     else:
         sz_s, sz_e = seizures[0]
         pre_len  = st.slider("Độ dài đoạn trước/sau cơn (giây)", 30, 300, 120)
-        compare_ch = st.selectbox("Kênh xem", ch_names, index=0)
+        compare_ch = st.selectbox("Kênh xem", ch_names[:n_ch], index=0)
         ch_idx = ch_names.index(compare_ch)
 
         # Cắt 3 đoạn
