@@ -71,17 +71,17 @@ def load_edf(subject, filename):
     elif DATA_MODE == "gdrive":
         import gdown, json
 
-        # Lấy file ID từ cache đã index trước
         index = _get_gdrive_index()
         file_id = index.get(subject, {}).get(filename)
 
         if not file_id:
-            st.error(f"Không tìm thấy {subject}/{filename} trên Drive. Kiểm tra lại folder ID.")
+            st.error(f"Khong tim thay {subject}/{filename} trong gdrive_index.json")
             st.stop()
 
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".edf")
         tmp.close()
-        gdown.download(id=file_id, output=tmp.name, quiet=True)
+        st.toast(f"Dang tai {filename} tu Drive (~40MB)...", icon="⏳")
+        gdown.download(id=file_id, output=tmp.name, quiet=True, fuzzy=True)
         filepath = tmp.name
 
     # -- PHYSIONET fallback --
@@ -97,6 +97,9 @@ def load_edf(subject, filename):
         filepath = tmp.name
 
     raw  = mne.io.read_raw_edf(filepath, preload=True, verbose=False)
+    # Chi load 1 kenh de tiet kiem RAM tren Streamlit Cloud
+    if DATA_MODE != "local":
+        raw.pick(raw.ch_names[:8])   # chi lay 8 kenh dau
     data = raw.get_data() * 1e6
     return data, raw.ch_names, int(raw.info["sfreq"]), raw.times[-1]
 
