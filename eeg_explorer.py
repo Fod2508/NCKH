@@ -124,11 +124,18 @@ def load_edf(subject, filename):
     ch_names = raw.ch_names
     sfreq    = int(raw.info["sfreq"])
     duration = raw.times[-1]
-    # Load tối đa 20 phút đầu để tiết kiệm RAM trên cloud
-    max_s    = min(duration, 1200) if DATA_MODE != "local" else duration
-    raw.crop(tmax=max_s).load_data(verbose=False)
+    # Load tối đa 60 phút nhưng đủ để bao phủ cơn nếu có
     if DATA_MODE != "local":
+        # Lấy thời điểm cơn xa nhất từ SEIZURE_INFO nếu có
+        sz_info = SEIZURE_INFO.get(subject, {}).get(filename, [])
+        max_s = min(duration, 3600)
+        if sz_info:
+            last_sz_end = max(e for _, e in sz_info)
+            max_s = min(duration, last_sz_end + 300)  # lấy thêm 5 phút sau cơn
+        raw.crop(tmax=max_s).load_data(verbose=False)
         raw.pick(raw.ch_names[:8])
+    else:
+        raw.load_data(verbose=False)
     data = raw.get_data() * 1e6
     return data, ch_names, sfreq, duration
 
@@ -395,9 +402,12 @@ with tab3:
 
         for ax, (sig, title, color, offset) in zip(axes, [
             (seg_pre,   f"Trước cơn ({pre_s}s → {sz_s}s)", "steelblue", pre_s),
-            (seg_ictal, f"TRONG CƠN ({sz_s}s → {sz_e}s) ← cơn thật",   "red",       sz_s),
-            (seg_post,  f"Sau cơn   ({sz_e}s → {post_e}s)", "green",      sz_e),
+            (seg_ictal, f"TRONG CƠN ({sz_s}s → {sz_e}s) ← cơn thật",   "red",   sz_s),
+            (seg_post,  f"Sau cơn   ({sz_e}s → {post_e}s)", "green",    sz_e),
         ]):
+            if len(sig) == 0:
+                ax.set_title(f"{title} — không có dữ liệu", fontsize=9)
+                continue
             t = np.arange(len(sig)) / sfreq + offset
             ax.plot(t, sig, lw=0.5, color=color)
             ax.set_title(title, fontsize=10, loc="left", fontweight="bold")
