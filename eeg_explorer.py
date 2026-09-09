@@ -87,7 +87,7 @@ def load_edf(subject, filename):
 
             def _dl():
                 try:
-                    gdown.download(id=file_id, output=tmp_path, quiet=True, fuzzy=True)
+                    gdown.download(id=file_id, output=tmp_path, quiet=True)
                 except Exception as e:
                     done["err"] = str(e)
                 done["v"] = True
