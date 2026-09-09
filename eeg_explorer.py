@@ -53,7 +53,7 @@ SEIZURE_INFO = {
 # HELPER
 # ════════════════════════════════════════════════════════════════════════════
 
-@st.cache_data(show_spinner="Đang đọc file EDF...")
+@st.cache_data(show_spinner=False)
 def load_edf(subject, filename):
     """
     Load EDF theo thứ tự ưu tiên:
@@ -230,7 +230,10 @@ else:
 # ════════════════════════════════════════════════════════════════════════════
 # LOAD DATA
 # ════════════════════════════════════════════════════════════════════════════
+_loading_placeholder = st.empty()
+_loading_placeholder.info(f"Đang tải {edf_file} (~40MB từ Drive, lần đầu mất ~45 giây)...")
 data, ch_names, sfreq, duration = load_edf(subject, edf_file)
+_loading_placeholder.empty()   # xóa thông báo sau khi tải xong
 n_ch, n_samples = data.shape
 
 # ════════════════════════════════════════════════════════════════════════════
