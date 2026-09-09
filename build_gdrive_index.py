@@ -1,90 +1,84 @@
-"""
-Tạo gdrive_index.json từ Google Drive.
-
-CÁCH DÙNG:
-1. Upload toàn bộ D:\NCKH\data\chbmit\ lên Google Drive
-2. Share thư mục gốc "chbmit" -> Anyone with link -> Viewer
-3. Chạy script này với Folder ID của thư mục chbmit:
-      python build_gdrive_index.py <FOLDER_ID>
-
-Ví dụ:
-      python build_gdrive_index.py 1AbCdEfGhIjKlMnOpQrStUvWx
-
-Script sẽ duyệt qua từng subfolder chbXX và lưu file_id của mỗi file EDF.
-Kết quả: gdrive_index.json -> push lên GitHub cùng code.
-"""
-
 import sys, json, re, requests
 
-def get_file_ids_in_folder(folder_id):
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+def get_files_in_folder(folder_id):
     """
-    Lấy {filename: file_id} trong 1 folder Drive công khai.
-    Dùng Google Drive API v3 (không cần auth cho folder public).
+    Parse file ID tu HTML cua Google Drive folder public.
+    Tra ve dict: {filename: file_id}
     """
-    url   = "https://www.googleapis.com/drive/v3/files"
-    key   = "AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY"  # public API key (read-only)
-    items = {}
-    page_token = None
+    url = f"https://drive.google.com/drive/folders/{folder_id}"
+    r = requests.get(url, headers=HEADERS, timeout=20)
+    if r.status_code != 200:
+        print(f"  LOI HTTP {r.status_code}")
+        return {}
 
-    while True:
-        params = {
-            "q"       : f"'{folder_id}' in parents and trashed=false",
-            "fields"  : "nextPageToken,files(id,name,mimeType)",
-            "pageSize": 1000,
-            "key"     : key,
-        }
-        if page_token:
-            params["pageToken"] = page_token
+    html = r.text
+    # Pattern 1: file entries trong JSON embed
+    # Drive embed data dang: ["filename",[["file_id",...
+    pattern_entry = re.compile(
+        r'"([^"]+\.(?:edf|txt|seizures))"[^[]*\[\["([-\w]{25,})"'
+    )
+    found = {}
+    for m in pattern_entry.finditer(html):
+        fname, fid = m.group(1), m.group(2)
+        found[fname] = fid
 
-        r = requests.get(url, params=params, timeout=15)
-        if r.status_code != 200:
-            print(f"  LỖI API: {r.status_code} — {r.text[:200]}")
-            print("  -> Folder có thể chưa được share public hoặc API key không hợp lệ")
-            break
+    # Pattern 2: folder entries
+    pattern_folder = re.compile(
+        r'"(chb\d{2})"[^[]*\[\["([-\w]{25,})"'
+    )
+    folders = {}
+    for m in pattern_folder.finditer(html):
+        name, fid = m.group(1), m.group(2)
+        folders[name] = fid
 
-        data = r.json()
-        for f in data.get("files", []):
-            items[f["name"]] = {"id": f["id"], "type": f["mimeType"]}
-
-        page_token = data.get("nextPageToken")
-        if not page_token:
-            break
-
-    return items
+    return found, folders
 
 
-def build_index(root_folder_id):
-    print(f"Bắt đầu scan folder: {root_folder_id}")
-    root_items = get_file_ids_in_folder(root_folder_id)
+def build_index(root_id):
+    print(f"Scanning folder: {root_id}")
 
-    if not root_items:
-        print("Không lấy được danh sách file. Kiểm tra:")
-        print("  1. Folder ID đúng chưa?")
-        print("  2. Đã share 'Anyone with the link' chưa?")
-        return
+    files, subfolders = get_files_in_folder(root_id)
+    print(f"Root: {len(files)} files truc tiep, {len(subfolders)} subfolder chbXX")
 
     index = {}
 
-    for name, info in sorted(root_items.items()):
-        if info["type"] == "application/vnd.google-apps.folder" and name.startswith("chb"):
-            print(f"  Scanning {name}...", end=" ", flush=True)
-            subfiles = get_file_ids_in_folder(info["id"])
-            edf_files = {k: v["id"] for k, v in subfiles.items() if k.endswith(".edf") or k.endswith(".txt")}
-            index[name] = edf_files
-            print(f"{len(edf_files)} files")
+    if subfolders:
+        # Cau truc: chbmit/ -> chb01/ -> *.edf
+        for subj, sfid in sorted(subfolders.items()):
+            print(f"  Scanning {subj}...", end=" ", flush=True)
+            sub_files, _ = get_files_in_folder(sfid)
+            index[subj] = sub_files
+            print(f"{len(sub_files)} files")
+    elif files:
+        # Cau truc flat: tat ca file trong 1 folder
+        # Nhom theo prefix chbXX
+        for fname, fid in files.items():
+            subj = fname[:5]  # chb01
+            if subj not in index:
+                index[subj] = {}
+            index[subj][fname] = fid
+        print(f"Flat structure: {len(index)} benh nhan")
+    else:
+        print("\nKhong parse duoc file nao tu HTML.")
+        print("Co the:")
+        print("  1. Folder chua duoc share 'Anyone with link'")
+        print("  2. Google thay doi cau truc HTML")
+        print("\nThu cach thu cong: mo link Drive, F12 -> Network -> tim request /drive/folders/")
+        return
 
-    output = "gdrive_index.json"
-    with open(output, "w") as f:
+    with open("gdrive_index.json", "w") as f:
         json.dump(index, f, indent=2)
 
-    print(f"\nXong! Lưu tại: {output}")
-    print(f"Tổng: {len(index)} bệnh nhân, {sum(len(v) for v in index.values())} files")
-    print("\nBước tiếp theo: push gdrive_index.json lên GitHub cùng eeg_explorer.py")
+    total = sum(len(v) for v in index.values())
+    print(f"\nXong! gdrive_index.json: {len(index)} benh nhan, {total} files")
+    if total == 0:
+        print("CANH BAO: 0 files duoc index. Kiem tra lai cau truc Drive.")
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Cách dùng: python build_gdrive_index.py <FOLDER_ID>")
-        print("Ví dụ   : python build_gdrive_index.py 1AbCdEfGhIjKlMnOpQ")
+        print("Cach dung: python build_gdrive_index.py <FOLDER_ID>")
     else:
         build_index(sys.argv[1])
