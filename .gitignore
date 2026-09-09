@@ -1,0 +1,5 @@
+data/
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+download_log.txt

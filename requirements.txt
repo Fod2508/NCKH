@@ -1,0 +1,7 @@
+streamlit==1.40.0
+mne==1.12.1
+numpy
+matplotlib
+pandas
+requests
+gdown
