@@ -70,6 +70,7 @@ def load_edf(subject, filename):
     # -- GOOGLE DRIVE --
     elif DATA_MODE == "gdrive":
         import gdown
+        import threading
 
         index    = _get_gdrive_index()
         file_id  = index.get(subject, {}).get(filename)
@@ -79,9 +80,31 @@ def load_edf(subject, filename):
             st.stop()
 
         tmp_path = f"/tmp/{subject}_{filename}"
-        # Dùng cache file trên /tmp nếu đã tải rồi
         if not os.path.exists(tmp_path):
-            gdown.download(id=file_id, output=tmp_path, quiet=True, fuzzy=True)
+            bar = st.progress(0, text=f"Đang tải {filename} từ Drive (40MB)...")
+            # Tải trong thread riêng, cập nhật progress
+            done = {"v": False, "err": None}
+
+            def _dl():
+                try:
+                    gdown.download(id=file_id, output=tmp_path, quiet=True, fuzzy=True)
+                except Exception as e:
+                    done["err"] = str(e)
+                done["v"] = True
+
+            t = threading.Thread(target=_dl, daemon=True)
+            t.start()
+            import time
+            elapsed = 0
+            while not done["v"]:
+                time.sleep(1)
+                elapsed += 1
+                pct = min(int(elapsed / 45 * 100), 95)
+                bar.progress(pct, text=f"Đang tải {filename}... ({elapsed}s)")
+            bar.progress(100, text="Tải xong!")
+            if done["err"]:
+                st.error(f"Lỗi tải file: {done['err']}")
+                st.stop()
         filepath = tmp_path
 
     # -- PHYSIONET fallback --
