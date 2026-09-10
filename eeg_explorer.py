@@ -307,27 +307,45 @@ with tab1:
 with tab2:
     st.header("Xem sóng EEG")
 
-    st.info("""
-    **Bước này làm gì?**
-    Vẽ đồ thị tín hiệu EEG theo thời gian. Bạn chọn kênh và khoảng thời gian muốn xem.
-    Mục tiêu: thấy sóng EEG trông như thế nào và nhận biết được khi nào có cơn bằng mắt.
-    """)
+    # Gợi ý ngữ cảnh cho file đang xem
+    if has_seizure:
+        sz_hints = " | ".join([f"Cơn {i+1}: giây {s}–{e}" for i, (s,e) in enumerate(seizures)])
+        st.success(f"**File này có cơn động kinh** — {sz_hints}. "
+                   f"Kéo slider 'Thời điểm bắt đầu' đến gần giây đó để thấy sóng thay đổi.")
+    else:
+        st.info("File này không có cơn — đây là tín hiệu bình thường. "
+                "Chọn file có cơn ở sidebar (ví dụ chb01_03.edf) để so sánh.")
 
     col_a, col_b, col_c = st.columns([2, 2, 1])
     with col_a:
-        # Chỉ hiện kênh có trong data thực tế
         available_ch = ch_names[:n_ch]
+        # Gợi ý kênh tốt nhất để xem cơn
+        recommended = [c for c in available_ch if any(x in c for x in ["T7","FP1","F7","T8"])]
+        default_ch  = recommended[:3] if recommended else available_ch[:3]
         selected_ch = st.multiselect(
             "Chọn kênh xem",
             available_ch,
-            default=available_ch[:3],
+            default=default_ch,
             max_selections=6,
+            help="Kênh vùng thái dương (T7, F7, FP1) thường cho thấy cơn rõ nhất vì hay là vùng khởi phát."
         )
     with col_b:
-        t_start = st.slider("Thời điểm bắt đầu (giây)", 0, int(duration) - 10, 0)
-        t_len   = st.slider("Độ dài đoạn xem (giây)", 5, 60, 10)
+        # Gợi ý mốc thời gian tốt để nhảy đến
+        if has_seizure:
+            sz_s_hint = seizures[0][0]
+            default_t = max(0, sz_s_hint - 30)   # nhảy đến 30 giây trước cơn
+            hint_txt  = f"💡 Giây {sz_s_hint} = bắt đầu cơn. Kéo đến ~{default_t}s để thấy trước + trong cơn."
+        else:
+            default_t = 0
+            hint_txt  = "Kéo slider để di chuyển dọc theo bản ghi."
+        t_start = st.slider("Thời điểm bắt đầu (giây)", 0, int(duration) - 10, default_t,
+                            help=hint_txt)
+        st.caption(hint_txt)
+        t_len = st.slider("Độ dài đoạn xem (giây)", 5, 60, 30,
+                          help="60 giây để thấy tổng quan. 10–20 giây để thấy hình dạng sóng chi tiết.")
     with col_c:
-        amp_scale = st.slider("Biên độ hiển thị (µV)", 50, 500, 150)
+        amp_scale = st.slider("Biên độ hiển thị (µV)", 50, 500, 150,
+                              help="Tăng lên 300–500 µV nếu đang xem đoạn trong cơn vì sóng to hơn bình thường.")
 
     if selected_ch:
         s_idx = t_start * sfreq
@@ -385,8 +403,12 @@ with tab3:
         st.warning("File này không có cơn. Hãy chọn file có cơn ở thanh bên (ví dụ chb01_03.edf).")
     else:
         sz_s, sz_e = seizures[0]
-        pre_len  = st.slider("Độ dài đoạn trước/sau cơn (giây)", 30, 300, 120)
-        compare_ch = st.selectbox("Kênh xem", ch_names[:n_ch], index=0)
+        st.info(f"**Cơn trong file này**: giây **{sz_s}** → **{sz_e}** (kéo dài {sz_e-sz_s} giây). "
+                f"Kênh **FP1-F7** hoặc **F7-T7** thường cho thấy sự khác biệt rõ nhất.")
+        pre_len  = st.slider("Độ dài đoạn trước/sau cơn (giây)", 30, 300, 120,
+                             help="120 giây = 2 phút trước và sau cơn. Tăng lên 300s để thấy não dần thay đổi từ xa.")
+        compare_ch = st.selectbox("Kênh xem", ch_names[:n_ch], index=0,
+                                  help="Thử đổi kênh để thấy cơn rõ hay mờ khác nhau — phản ánh vùng khởi phát.")
         ch_idx = ch_names.index(compare_ch)
 
         # Cắt 3 đoạn
