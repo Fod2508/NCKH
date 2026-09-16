@@ -586,7 +586,7 @@ with tab4:
     v2_pre    = df_feat.loc["Trước cơn",   feat2] if "Trước cơn"   in df_feat.index else 0
 
     thresh1 = round((v_normal + v_ictal) / 2, 1)
-    thresh2 = round((v_normal + v_pre)   / 2, 1)
+    thresh2 = round((v2_normal + v2_pre) / 2, 4)
 
     # ── BƯỚC 3: Tính ngưỡng ──────────────────────────────────────────────
     st.subheader("Bước 3 — Tính ngưỡng phân chia")
