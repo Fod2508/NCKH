@@ -246,10 +246,11 @@ n_ch, n_samples = data.shape
 # ════════════════════════════════════════════════════════════════════════════
 # TABS
 # ════════════════════════════════════════════════════════════════════════════
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "Thuộc tính file",
     "Xem sóng EEG",
     "So sánh giai đoạn",
+    "Decision Tree",
 ])
 
 
@@ -514,3 +515,176 @@ with tab3:
                      use_container_width=True)
         st.caption("🔴 Đỏ = cao nhất  |  🟢 Xanh = thấp nhất  |  So sánh từng cột để thấy sự dịch chuyển năng lượng")
 
+
+# ────────────────────────────────────────────────────────────────────────────
+# TAB 4: Decision Tree — hướng dẫn từng bước
+# ────────────────────────────────────────────────────────────────────────────
+with tab4:
+    st.header("Decision Tree — Học từng bước với dữ liệu thực")
+
+    if not has_seizure:
+        st.warning("Chọn file có cơn (ví dụ chb01_03.edf) để thấy dữ liệu thực tế.")
+        st.stop()
+
+    import pandas as pd
+    sz_s, sz_e = seizures[0]
+
+    # ── Tính đặc trưng 4 giai đoạn ────────────────────────────────────────
+    seg_normal_data = data[:, max(0, (sz_s-600))*sfreq : max(0, (sz_s-540))*sfreq]
+    seg_pre_data    = data[:, (sz_s-300)*sfreq : sz_s*sfreq]
+    seg_ictal_data  = data[:, sz_s*sfreq : sz_e*sfreq]
+    seg_post_data   = data[:, sz_e*sfreq : min(n_samples, (sz_e+300)*sfreq)]
+
+    rows = {}
+    for name, seg in [
+        ("Bình thường", seg_normal_data),
+        ("Trước cơn",   seg_pre_data),
+        ("Trong cơn",   seg_ictal_data),
+        ("Sau cơn",     seg_post_data),
+    ]:
+        if seg.shape[1] > 0:
+            rows[name] = compute_features(seg)
+
+    df_feat = pd.DataFrame(rows).T.round(2)
+    feat_names = list(df_feat.columns)
+
+    # ── BƯỚC 1: Xem bảng đặc trưng ───────────────────────────────────────
+    st.subheader("Bước 1 — Xem bảng đặc trưng của 4 giai đoạn")
+    st.caption("""
+    Mỗi hàng = 1 giai đoạn. Mỗi cột = 1 đặc trưng.
+    Decision Tree sẽ dùng các số này để học cách phân loại.
+    Câu hỏi cần trả lời: **cột nào phân biệt "Bình thường" vs "Trong cơn" tốt nhất?**
+    """)
+
+    def highlight_max(s):
+        return ["background-color: #ffcccc" if v == s.max() else "" for v in s]
+    st.dataframe(df_feat.style.apply(highlight_max), use_container_width=True)
+    st.caption("🔴 Ô đỏ = giá trị lớn nhất trong cột — đặc trưng nào tăng nhiều nhất khi có cơn?")
+
+    # ── BƯỚC 2: Chọn đặc trưng ───────────────────────────────────────────
+    st.subheader("Bước 2 — Chọn đặc trưng để xây dựng cây")
+    st.markdown("""
+    **Tiêu chí chọn đặc trưng tốt:**
+    - Giá trị khác biệt rõ giữa "Bình thường" và "Trong cơn"
+    - Ngưỡng phân chia dễ xác định
+    - Variance và Line Length thường là lựa chọn tốt nhất vì thay đổi lớn nhất
+    """)
+
+    col_f1, col_f2 = st.columns(2)
+    feat1 = col_f1.selectbox("Đặc trưng gốc (node 1)", feat_names,
+                              index=0,
+                              help="Chọn đặc trưng thay đổi nhiều nhất — thường là Variance")
+    feat2 = col_f2.selectbox("Đặc trưng nhánh con (node 2)", feat_names,
+                              index=min(4, len(feat_names)-1),
+                              help="Chọn đặc trưng thứ 2 để phân biệt thêm")
+
+    # Lấy giá trị thực tế
+    v_normal = df_feat.loc["Bình thường", feat1] if "Bình thường" in df_feat.index else 0
+    v_pre    = df_feat.loc["Trước cơn",   feat1] if "Trước cơn"   in df_feat.index else 0
+    v_ictal  = df_feat.loc["Trong cơn",   feat1] if "Trong cơn"   in df_feat.index else 0
+    v2_normal = df_feat.loc["Bình thường", feat2] if "Bình thường" in df_feat.index else 0
+    v2_pre    = df_feat.loc["Trước cơn",   feat2] if "Trước cơn"   in df_feat.index else 0
+
+    thresh1 = round((v_normal + v_ictal) / 2, 1)
+    thresh2 = round((v_normal + v_pre)   / 2, 1)
+
+    # ── BƯỚC 3: Tính ngưỡng ──────────────────────────────────────────────
+    st.subheader("Bước 3 — Tính ngưỡng phân chia")
+    st.markdown(f"""
+    Decision Tree chọn ngưỡng = **trung điểm giữa 2 lớp** (đơn giản nhất):
+
+    **Node 1 — {feat1}:**
+    - Bình thường = {v_normal:.1f}
+    - Trong cơn   = {v_ictal:.1f}
+    - Ngưỡng      = ({v_normal:.1f} + {v_ictal:.1f}) / 2 = **{thresh1}**
+
+    **Node 2 — {feat2}:**
+    - Bình thường = {v2_normal:.1f}
+    - Trước cơn   = {v2_pre:.1f}
+    - Ngưỡng      = ({v2_normal:.1f} + {v2_pre:.1f}) / 2 = **{thresh2}**
+    """)
+
+    # ── BƯỚC 4: Vẽ cây ───────────────────────────────────────────────────
+    st.subheader("Bước 4 — Cây quyết định")
+
+    st.code(f"""
+                [CỬA SỔ EEG 10 GIÂY]
+                        |
+            {feat1} > {thresh1} ?
+           /                      \\
+         CÓ                      KHÔNG
+          |                         |
+ {feat2} > {thresh2} ?        → BÌNH THƯỜNG ✓
+      /          \\
+    CÓ           KHÔNG
+     |               |
+TRƯỚC CƠN ⚠️    BÌNH THƯỜNG ✓
+
+Kiểm tra với dữ liệu thực:
+  Bình thường : {feat1}={v_normal:.1f}  → {thresh1} ? {'CÓ' if v_normal > thresh1 else 'KHÔNG'} → BÌNH THƯỜNG {'✓' if v_normal <= thresh1 else '✗ (sai)'}
+  Trước cơn   : {feat1}={v_pre:.1f}    → {thresh1} ? {'CÓ' if v_pre > thresh1 else 'KHÔNG'}
+  Trong cơn   : {feat1}={v_ictal:.1f}  → {thresh1} ? {'CÓ' if v_ictal > thresh1 else 'KHÔNG'}
+    """, language=None)
+
+    # ── BƯỚC 5: So sánh cây tốt vs xấu ──────────────────────────────────
+    st.subheader("Bước 5 — Cây nào tốt hơn cây nào?")
+
+    # Tính tỷ lệ thay đổi để đánh giá đặc trưng
+    change_ratios = {}
+    for feat in feat_names:
+        if "Bình thường" in df_feat.index and "Trong cơn" in df_feat.index:
+            v_n = abs(df_feat.loc["Bình thường", feat]) + 1e-10
+            v_i = abs(df_feat.loc["Trong cơn",   feat]) + 1e-10
+            change_ratios[feat] = round(max(v_n, v_i) / min(v_n, v_i), 2)
+
+    df_change = pd.DataFrame.from_dict(
+        change_ratios, orient="index", columns=["Tỷ lệ thay đổi (Trong cơn / Bình thường)"]
+    ).sort_values("Tỷ lệ thay đổi (Trong cơn / Bình thường)", ascending=False)
+
+    col_good, col_bad = st.columns(2)
+
+    with col_good:
+        st.success("**Cây TỐT — dùng đặc trưng thay đổi nhiều**")
+        best_feat = df_change.index[0]
+        best_ratio = df_change.iloc[0, 0]
+        st.markdown(f"""
+        Ví dụ dùng **{best_feat}**:
+        - Bình thường: {df_feat.loc['Bình thường', best_feat]:.1f}
+        - Trong cơn:   {df_feat.loc['Trong cơn', best_feat]:.1f}
+        - Tỷ lệ thay đổi: **{best_ratio}x** ← rất dễ phân biệt
+        - Ngưỡng chia rõ ràng → cây ít sai
+        """)
+
+    with col_bad:
+        st.error("**Cây XẤU — dùng đặc trưng thay đổi ít**")
+        worst_feat = df_change.index[-1]
+        worst_ratio = df_change.iloc[-1, 0]
+        st.markdown(f"""
+        Ví dụ dùng **{worst_feat}**:
+        - Bình thường: {df_feat.loc['Bình thường', worst_feat]:.1f}
+        - Trong cơn:   {df_feat.loc['Trong cơn', worst_feat]:.1f}
+        - Tỷ lệ thay đổi: **{worst_ratio}x** ← khó phân biệt
+        - 2 lớp gần nhau → cây dễ đoán sai
+        """)
+
+    st.subheader("Bảng xếp hạng đặc trưng theo khả năng phân biệt")
+    st.caption("Tỷ lệ thay đổi càng lớn = đặc trưng càng tốt để làm node gốc của cây")
+
+    def color_ratio(val):
+        if val >= 5:   return "background-color: #c6efce"
+        if val >= 2:   return "background-color: #ffeb9c"
+        return "background-color: #ffc7ce"
+
+    st.dataframe(
+        df_change.style.applymap(color_ratio),
+        use_container_width=True
+    )
+    st.caption("🟢 Xanh ≥ 5x = rất tốt | 🟡 Vàng 2–5x = tạm được | 🔴 Đỏ < 2x = không nên dùng")
+
+    st.info("""
+    **Tóm tắt để trả lời cô:**
+    - Chọn đặc trưng có tỷ lệ thay đổi lớn nhất làm node gốc
+    - Decision Tree tự động tìm ngưỡng tối ưu (dùng Gini/Entropy)
+    - Random Forest = 500 cây như trên, mỗi cây dùng tập con ngẫu nhiên → bỏ phiếu đa số
+    - Cây đơn dễ overfit, Random Forest khắc phục bằng cách đa dạng hóa
+    """)
